@@ -150,20 +150,24 @@ export default function Competitors({ business }: { business: Business }) {
 
   const runTeardown = async (comp: Competitor) => {
     setTeardownLoading(comp.id);
-    // Simulate deep AI teardown analysis
-    setTimeout(() => {
+    const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000/api';
+
+    try {
+      const response = await fetch(`${API_URL}/competitors/${comp.id}/teardown`, {
+        method: 'POST',
+      });
+      if (!response.ok) throw new Error('Failed to run teardown');
+      const data = await response.json();
+
       setActiveTeardown((prev) => ({
         ...prev,
-        [comp.id]: {
-          sentiment: comp.avg_engagement_rate > 4 ? 'High Engagement' : 'Moderate',
-          sentimentScore: comp.avg_engagement_rate > 4 ? 88 : 65,
-          weakSpot: 'Inconsistent video posting & low comment response speed.',
-          topHashtags: [`#${comp.name.replace(/\s+/g, '')}`, '#promo', '#bestdeals', '#trending'],
-          aiCounterStrategy: `Focus on behind-the-scenes Short-form Reels showing authentic customer stories for ${business.name}. Post during peak hour (6:00 PM).`,
-        },
+        [comp.id]: data,
       }));
+    } catch (err) {
+      console.error('Teardown error:', err);
+    } finally {
       setTeardownLoading(null);
-    }, 800);
+    }
   };
 
   // AI insights based on competitor data

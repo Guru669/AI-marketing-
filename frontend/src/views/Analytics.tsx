@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { PLATFORMS, type Business, type Analytics } from '@/lib/types';
-import { TrendingUp, Eye, Heart, MessageCircle, Share2, Bookmark, Clock, Award, LineChart, PieChart, Search, Star } from 'lucide-react';
+import { TrendingUp, Eye, Heart, MessageCircle, Share2, Bookmark, Clock, Award, LineChart, PieChart, Search, Star, Loader2 } from 'lucide-react';
 
 import ReportGenerator from '@/components/ReportGenerator';
 
@@ -17,6 +17,49 @@ export default function Analytics({ business }: { business: Business }) {
   const [data, setData] = useState<Analytics[]>([]);
   const [loading, setLoading] = useState(true);
   const [platform, setPlatform] = useState('all');
+
+  // AI states
+  const [prediction, setPrediction] = useState<any>(null);
+  const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const loadAIInsights = useCallback(async () => {
+    if (data.length === 0) return;
+    setAiLoading(true);
+    const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000/api';
+    try {
+      const [predRes, recRes] = await Promise.all([
+        fetch(`${API_URL}/analytics/predict-sales`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ businessId: business.id })
+        }),
+        fetch(`${API_URL}/analytics/recommendations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ businessId: business.id })
+        })
+      ]);
+
+      if (predRes.ok) setPrediction(await predRes.json());
+      if (recRes.ok) {
+        const d = await recRes.json();
+        setRecommendations(d.recommendations || []);
+      }
+    } catch (err) {
+      console.error('AI Insight error:', err);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [business.id, data.length]);
+
+  useEffect(() => {
+    if (activeTool === 'sales' || activeTool === 'recommendations') {
+      if (!prediction || recommendations.length === 0) {
+        loadAIInsights();
+      }
+    }
+  }, [activeTool, loadAIInsights, prediction, recommendations.length]);
 
   const load = useCallback(async () => {
     const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000/api';
@@ -249,28 +292,47 @@ export default function Analytics({ business }: { business: Business }) {
 
       {activeTool === 'sales' && (
         <div className="card p-12 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto mb-4">
-            <PieChart className="w-8 h-8 text-indigo-600" />
-          </div>
-          <h3 className="font-bold text-stone-900 text-xl mb-2">Sales Prediction</h3>
-          <p className="text-stone-500 max-w-md mx-auto">AI models are analyzing your engagement trends to predict future revenue. This feature requires at least 30 days of data.</p>
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
-            <div className="p-4 rounded-xl border border-stone-100 bg-stone-50">
-              <p className="text-xs font-bold text-stone-400 uppercase mb-1">Next 30 Days Est.</p>
-              <p className="text-2xl font-black text-emerald-600">₹{((totals.likes * 12.5) * 1.2).toFixed(1)}K</p>
-              <p className="text-[10px] text-emerald-600 font-bold mt-1">+20% projected growth</p>
+          {aiLoading ? (
+             <div className="flex flex-col items-center gap-4 py-8">
+               <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+               <p className="text-sm text-stone-500 font-medium">AI is projecting your growth...</p>
+             </div>
+          ) : prediction ? (
+            <div className="space-y-8 animate-fade-in">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto">
+                <PieChart className="w-8 h-8 text-indigo-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-stone-900 text-xl mb-2">Sales Prediction</h3>
+                <p className="text-stone-500 max-w-md mx-auto">{prediction.reasoning}</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+                <div className="p-4 rounded-xl border border-stone-100 bg-stone-50">
+                  <p className="text-xs font-bold text-stone-400 uppercase mb-1">Next 30 Days Est.</p>
+                  <p className="text-2xl font-black text-emerald-600">₹{prediction.nextMonthEstimate?.toLocaleString()}</p>
+                  <p className="text-[10px] text-emerald-600 font-bold mt-1">+{prediction.growthPercentage}% projected growth</p>
+                </div>
+                <div className="p-4 rounded-xl border border-stone-100 bg-stone-50">
+                  <p className="text-xs font-bold text-stone-400 uppercase mb-1">Confidence Score</p>
+                  <p className="text-2xl font-black text-stone-900">{prediction.confidenceScore}%</p>
+                  <p className="text-[10px] text-stone-400 font-bold mt-1">Based on historical data</p>
+                </div>
+                <div className="p-4 rounded-xl border border-stone-100 bg-stone-50">
+                  <p className="text-xs font-bold text-stone-400 uppercase mb-1">Top Revenue Driver</p>
+                  <p className="text-2xl font-black text-indigo-600">{prediction.topDriver}</p>
+                  <p className="text-[10px] text-indigo-600 font-bold mt-1">High conversion potential</p>
+                </div>
+              </div>
             </div>
-            <div className="p-4 rounded-xl border border-stone-100 bg-stone-50">
-              <p className="text-xs font-bold text-stone-400 uppercase mb-1">Confidence Score</p>
-              <p className="text-2xl font-black text-stone-900">88%</p>
-              <p className="text-[10px] text-stone-400 font-bold mt-1">Based on historical data</p>
+          ) : (
+            <div className="space-y-4">
+               <div className="w-16 h-16 rounded-2xl bg-stone-50 flex items-center justify-center mx-auto mb-4">
+                 <PieChart className="w-8 h-8 text-stone-300" />
+               </div>
+               <h3 className="font-bold text-stone-900 text-xl">Sales Prediction</h3>
+               <p className="text-stone-500 max-w-md mx-auto">AI models are ready to analyze your engagement trends. This feature requires analytics data.</p>
             </div>
-            <div className="p-4 rounded-xl border border-stone-100 bg-stone-50">
-              <p className="text-xs font-bold text-stone-400 uppercase mb-1">Top Revenue Driver</p>
-              <p className="text-2xl font-black text-indigo-600">Instagram Reels</p>
-              <p className="text-[10px] text-indigo-600 font-bold mt-1">High conversion potential</p>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -291,27 +353,35 @@ export default function Analytics({ business }: { business: Business }) {
             <Star className="w-6 h-6 text-yellow-500" />
             <h2 className="font-bold text-stone-900 text-xl">AI Growth Recommendations</h2>
           </div>
-          <div className="space-y-4">
-            {[
-              { title: 'Increase Reels Frequency', desc: 'Your Reels engagement is 3.5x higher than static posts. Aim for 3-4 Reels per week.', priority: 'High' },
-              { title: 'Optimize Posting Window', desc: 'Your audience is most active between 7 PM and 9 PM. Schedule your top content for these hours.', priority: 'Medium' },
-              { title: 'Use Trending Audio', desc: 'Posts using trending audio tracks are getting 40% more reach. Check the AI Copilot for latest trends.', priority: 'Medium' },
-              { title: 'Respond to Comments faster', desc: 'Average response time is 4 hours. Reducing this to under 1 hour can boost engagement by 15%.', priority: 'Low' },
-            ].map((rec, i) => (
-              <div key={i} className="p-4 rounded-xl border border-stone-100 hover:border-indigo-100 hover:bg-indigo-50/20 transition-all flex items-start justify-between">
-                <div>
-                  <h4 className="font-bold text-stone-900 text-sm">{rec.title}</h4>
-                  <p className="text-xs text-stone-500 mt-1">{rec.desc}</p>
+
+          {aiLoading ? (
+             <div className="flex flex-col items-center gap-4 py-8">
+               <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+               <p className="text-sm text-stone-500 font-medium">AI is generating your growth roadmap...</p>
+             </div>
+          ) : (
+            <div className="space-y-4">
+              {(recommendations.length > 0 ? recommendations : [
+                { title: 'Increase Reels Frequency', desc: 'Your Reels engagement is 3.5x higher than static posts. Aim for 3-4 Reels per week.', priority: 'High' },
+                { title: 'Optimize Posting Window', desc: 'Your audience is most active between 7 PM and 9 PM. Schedule your top content for these hours.', priority: 'Medium' },
+                { title: 'Use Trending Audio', desc: 'Posts using trending audio tracks are getting 40% more reach. Check the AI Copilot for latest trends.', priority: 'Medium' },
+                { title: 'Respond to Comments faster', desc: 'Average response time is 4 hours. Reducing this to under 1 hour can boost engagement by 15%.', priority: 'Low' },
+              ]).map((rec, i) => (
+                <div key={i} className="p-4 rounded-xl border border-stone-100 hover:border-indigo-100 hover:bg-indigo-50/20 transition-all flex items-start justify-between">
+                  <div>
+                    <h4 className="font-bold text-stone-900 text-sm">{rec.title}</h4>
+                    <p className="text-xs text-stone-500 mt-1">{rec.desc}</p>
+                  </div>
+                  <span className={`text-[10px] font-black uppercase px-2 py-1 rounded ${
+                    rec.priority === 'High' ? 'bg-red-50 text-red-600' :
+                    rec.priority === 'Medium' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'
+                  }`}>
+                    {rec.priority} Priority
+                  </span>
                 </div>
-                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded ${
-                  rec.priority === 'High' ? 'bg-red-50 text-red-600' :
-                  rec.priority === 'Medium' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'
-                }`}>
-                  {rec.priority} Priority
-                </span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

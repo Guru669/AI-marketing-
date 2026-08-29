@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { OpenAI } from 'openai';
 import { connectDB, Business, Post, Analytics, IPost, IAnalytics } from './db';
+import { getAIClient, getAIModel } from './lib/ai';
 import mediaRoutes from './routes/media';
 import authRoutes from './routes/auth';
 import userAuthRoutes from './routes/userAuth';
@@ -28,10 +29,6 @@ startScheduler();
 
 app.use(cors());
 app.use(express.json());
-
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -85,7 +82,10 @@ app.post('/api/generate-content', async (req, res) => {
   }
 
   try {
-    if (openai) {
+    const aiClient = getAIClient();
+    const model = getAIModel();
+
+    if (aiClient) {
       const prompt = `
         You are an expert social media manager. Create a ${contentType} for ${businessName}, a ${businessType} business.
         Business Description: ${description}
@@ -103,9 +103,9 @@ app.post('/api/generate-content', async (req, res) => {
         - suggestions: 3-5 tips for the post
       `;
 
-      const completion = await openai.chat.completions.create({
+      const completion = await aiClient.chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
-        model: 'gpt-3.5-turbo',
+        model: model,
         response_format: { type: 'json_object' },
       });
 
